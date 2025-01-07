@@ -53,7 +53,8 @@ def get_audits():
 def exportar_dados():
     try:
         items = audits_collection.find()
-        result = [json_util.loads(json_util.dumps(item)) for item in items]
+        # Converte ObjectId para string
+        result = [{**item, "_id": str(item["_id"])} for item in items]
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"Erro ao exportar dados: {str(e)}")
