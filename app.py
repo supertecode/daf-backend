@@ -62,27 +62,20 @@ def register_user(current_user):
     if current_user['role'] != 'admin':
         return jsonify({'message': 'Sem permissão!'}), 403
     
-    try:
-        data = request.json
-        
-        if users_collection.find_one({'username': data['username']}):
-            return jsonify({'message': 'Usuário já existe!'}), 400
-        
-        # Usando método pbkdf2:sha256 explicitamente
-        hashed_password = generate_password_hash(data['password'], method='pbkdf2:sha256')
-        
-        new_user = {
-            'username': data['username'],
-            'password': hashed_password,
-            'role': data['role'],
-            'name': data['name']
-        }
-        
-        users_collection.insert_one(new_user)
-        return jsonify({'message': 'Usuário registrado com sucesso!'}), 201
-    except Exception as e:
-        logger.error(f"Erro ao registrar usuário: {str(e)}")
-        return jsonify({"erro": str(e)}), 500
+    data = request.json
+    
+    if users_collection.find_one({'username': data['username']}):
+        return jsonify({'message': 'Usuário já existe!'}), 400
+    
+    new_user = {
+        'username': data['username'],
+        'password': generate_password_hash(data['password']),
+        'role': data['role'],  # 'auditor' ou 'admin'
+        'name': data['name']
+    }
+    
+    users_collection.insert_one(new_user)
+    return jsonify({'message': 'Usuário registrado com sucesso!'}), 201
 
 @app.route('/login', methods=['POST'])
 def login():
