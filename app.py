@@ -43,7 +43,8 @@ def token_required(f):
             token = token.split(" ")[1]  # Remove "Bearer " do token
             data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
             current_user = users_collection.find_one({'username': data['username']})
-        except:
+        except Exception as e:
+            logger.error(f"Erro na validação do token: {str(e)}")
             return jsonify({'message': 'Token inválido!'}), 401
 
         return f(current_user, *args, **kwargs)
@@ -65,10 +66,13 @@ def register_user(current_user):
         if users_collection.find_one({'username': data['username']}):
             return jsonify({'message': 'Usuário já existe!'}), 400
         
+        # Usando método pbkdf2:sha256 explicitamente
+        hashed_password = generate_password_hash(data['password'], method='pbkdf2:sha256')
+        
         new_user = {
             'username': data['username'],
-            'password': generate_password_hash(data['password']),
-            'role': data['role'],  # 'auditor' ou 'admin'
+            'password': hashed_password,
+            'role': data['role'],
             'name': data['name']
         }
         
@@ -82,10 +86,19 @@ def register_user(current_user):
 def login():
     try:
         auth = request.json
+        logger.info(f"Tentativa de login para usuário: {auth['username']}")
         
         user = users_collection.find_one({'username': auth['username']})
         
-        if not user or not check_password_hash(user['password'], auth['password']):
+        if not user:
+            logger.warning(f"Usuário não encontrado: {auth['username']}")
+            return jsonify({'message': 'Credenciais inválidas!'}), 401
+
+        # Log do hash armazenado para debug
+        logger.info(f"Hash tipo armazenado: {user['password'][:50]}...")
+        
+        if not check_password_hash(user['password'], auth['password']):
+            logger.warning(f"Senha incorreta para usuário: {auth['username']}")
             return jsonify({'message': 'Credenciais inválidas!'}), 401
         
         token = jwt.encode({
