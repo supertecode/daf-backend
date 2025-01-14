@@ -261,6 +261,29 @@ def update_audit(current_user, audit_id):
         logger.error(f"Erro ao atualizar auditoria: {str(e)}")
         return jsonify({"erro": str(e)}), 500
 
+@app.route('/users/<user_id>', methods=['DELETE'])
+@token_required
+def delete_user(current_user, user_id):
+    if current_user['role'] != 'admin':
+        return jsonify({'message': 'Sem permissão!'}), 403
+
+    from bson.objectid import ObjectId
+    
+    # Verifica se é o último administrador
+    admin_count = users_collection.count_documents({'role': 'admin'})
+    user_to_delete = users_collection.find_one({'_id': ObjectId(user_id)})
+    
+    if user_to_delete['role'] == 'admin' and admin_count <= 1:
+        return jsonify({'message': 'Não é possível deletar o último administrador!'}), 400
+    
+    # Deleta o usuário
+    result = users_collection.delete_one({'_id': ObjectId(user_id)})
+    
+    if result.deleted_count > 0:
+        return jsonify({'message': 'Usuário deletado com sucesso!'}), 200
+    else:
+        return jsonify({'message': 'Usuário não encontrado!'}), 404
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
