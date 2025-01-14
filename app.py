@@ -9,6 +9,8 @@ import os
 import logging
 from bson import json_util, ObjectId
 
+DATE_FORMAT = "%d/%m/%Y"
+
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -127,9 +129,29 @@ def submit_audit(current_user):
             return jsonify({'message': 'Sem permissão!'}), 403
         
         data = request.json
-        data['auditor'] = current_user['name']  # Usa o nome do usuário logado
-        audits_collection.insert_one(data)
-        return jsonify({"message": "Auditoria registrada com sucesso!"}), 201
+        
+        # Verifica se já existe uma auditoria do mesmo auditor para o mesmo setor na mesma data
+        today = datetime.now().strftime(DATE_FORMAT)
+        existing_audit = audits_collection.find_one({
+            'auditor': current_user['name'],
+            'setor': data['setor'],
+            'data': today
+        })
+        
+        if existing_audit:
+            return jsonify({
+                'message': 'Já existe uma auditoria para este setor hoje!',
+                'auditId': str(existing_audit['_id'])
+            }), 409
+        
+        data['auditor'] = current_user['name']
+        data['data'] = today
+        result = audits_collection.insert_one(data)
+        
+        return jsonify({
+            "message": "Auditoria registrada com sucesso!",
+            "auditId": str(result.inserted_id)
+        }), 201
     except Exception as e:
         logger.error(f"Erro ao submeter auditoria: {str(e)}")
         return jsonify({"erro": str(e)}), 500
@@ -138,7 +160,19 @@ def submit_audit(current_user):
 @token_required
 def get_audits(current_user):
     try:
-        audits = list(audits_collection.find({}, {"_id": 0}))
+        # Se for auditor, retorna apenas suas próprias auditorias
+        if current_user['role'] == 'auditor':
+            audits = list(audits_collection.find(
+                {'auditor': current_user['name']},
+                {"_id": 1, "setor": 1, "data": 1, "notas": 1, "observacoes": 1}
+            ))
+        else:
+            audits = list(audits_collection.find({}, {"_id": 1, "setor": 1, "data": 1, "notas": 1, "observacoes": 1, "auditor": 1}))
+        
+        # Converter ObjectId para string
+        for audit in audits:
+            audit['_id'] = str(audit['_id'])
+            
         return jsonify(audits)
     except Exception as e:
         logger.error(f"Erro ao buscar auditorias: {str(e)}")
@@ -174,29 +208,64 @@ def get_users(current_user):
         logger.error(f"Erro ao buscar usuários: {str(e)}")
         return jsonify({"erro": str(e)}), 500
 
-@app.route('/users/<user_id>', methods=['DELETE'])
+@app.route('/audits/<audit_id>', methods=['DELETE'])
 @token_required
-def delete_user(current_user, user_id):
+def delete_audit(current_user, audit_id):
     try:
-        if current_user['role'] != 'admin':
-            return jsonify({'message': 'Sem permissão!'}), 403
+        # Busca a auditoria
+        audit = audits_collection.find_one({'_id': ObjectId(audit_id)})
         
-        # Verifica se é o último administrador
-        admin_count = users_collection.count_documents({'role': 'admin'})
-        user_to_delete = users_collection.find_one({'_id': ObjectId(user_id)})
+        if not audit:
+            return jsonify({'message': 'Auditoria não encontrada!'}), 404
+            
+        # Verifica se o auditor é dono da auditoria
+        if current_user['role'] != 'admin' and audit['auditor'] != current_user['name']:
+            return jsonify({'message': 'Sem permissão para deletar esta auditoria!'}), 403
+            
+        # Verifica se a auditoria é do mesmo dia
+        if audit['data'] != datetime.now().strftime(DATE_FORMAT):
+            return jsonify({'message': 'Só é possível deletar auditorias do dia atual!'}), 403
         
-        if user_to_delete['role'] == 'admin' and admin_count <= 1:
-            return jsonify({'message': 'Não é possível deletar o último administrador!'}), 400
-        
-        # Deleta o usuário
-        result = users_collection.delete_one({'_id': ObjectId(user_id)})
+        result = audits_collection.delete_one({'_id': ObjectId(audit_id)})
         
         if result.deleted_count > 0:
-            return jsonify({'message': 'Usuário deletado com sucesso!'}), 200
+            return jsonify({'message': 'Auditoria deletada com sucesso!'}), 200
         else:
-            return jsonify({'message': 'Usuário não encontrado!'}), 404
+            return jsonify({'message': 'Auditoria não encontrada!'}), 404
     except Exception as e:
-        logger.error(f"Erro ao deletar usuário: {str(e)}")
+        logger.error(f"Erro ao deletar auditoria: {str(e)}")
+        return jsonify({"erro": str(e)}), 500
+
+@app.route('/audits/<audit_id>', methods=['PUT'])
+@token_required
+def update_audit(current_user, audit_id):
+    try:
+        # Busca a auditoria
+        audit = audits_collection.find_one({'_id': ObjectId(audit_id)})
+        
+        if not audit:
+            return jsonify({'message': 'Auditoria não encontrada!'}), 404
+            
+        # Verifica se o auditor é dono da auditoria
+        if current_user['role'] != 'admin' and audit['auditor'] != current_user['name']:
+            return jsonify({'message': 'Sem permissão para atualizar esta auditoria!'}), 403
+            
+        # Verifica se a auditoria é do mesmo dia
+        if audit['data'] != datetime.now().strftime(DATE_FORMAT):
+            return jsonify({'message': 'Só é possível atualizar auditorias do dia atual!'}), 403
+        
+        data = request.json
+        data['auditor'] = audit['auditor']  # Mantém o auditor original
+        data['data'] = audit['data']  # Mantém a data original
+        
+        audits_collection.update_one(
+            {'_id': ObjectId(audit_id)},
+            {'$set': data}
+        )
+        
+        return jsonify({'message': 'Auditoria atualizada com sucesso!'}), 200
+    except Exception as e:
+        logger.error(f"Erro ao atualizar auditoria: {str(e)}")
         return jsonify({"erro": str(e)}), 500
 
 if __name__ == "__main__":
