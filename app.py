@@ -152,8 +152,24 @@ def submit_audit(current_user):
 @app.route('/audits', methods=['GET'])
 @token_required
 def get_audits(current_user):
-    audits = list(audits_collection.find({}, {"_id": 0}))
-    return jsonify(audits)
+    try:
+        # Se for auditor, retorna apenas suas próprias auditorias
+        if current_user['role'] == 'auditor':
+            audits = list(audits_collection.find(
+                {'auditor': current_user['name']},
+                {"_id": 1, "setor": 1, "data": 1, "notas": 1, "observacoes": 1}
+            ))
+        else:
+            audits = list(audits_collection.find({}, {"_id": 1, "setor": 1, "data": 1, "notas": 1, "observacoes": 1, "auditor": 1}))
+        
+        # Converter ObjectId para string
+        for audit in audits:
+            audit['_id'] = str(audit['_id'])
+            
+        return jsonify(audits)
+    except Exception as e:
+        logger.error(f"Erro ao buscar auditorias: {str(e)}")
+        return jsonify({"erro": str(e)}), 500
 
 @app.route('/export', methods=['GET'])
 @token_required
