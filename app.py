@@ -172,7 +172,6 @@ def get_audits(current_user):
         return jsonify({"erro": str(e)}), 500
 
 @app.route('/export', methods=['GET'])
-@token_required
 def exportar_dados(current_user):
     try:
         items = audits_collection.find()
