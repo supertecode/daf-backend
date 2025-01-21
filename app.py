@@ -174,12 +174,12 @@ def get_audits(current_user):
 @app.route('/export', methods=['GET'])
 def exportar_dados():
     try:
-        # Obtém todos os documentos da coleção
         items = audits_collection.find()
-        # Converte os documentos para um formato JSON serializável
-        result = [json_util.loads(json_util.dumps(item)) for item in items]
+        # Converte ObjectId para string
+        result = [{**item, "_id": str(item["_id"])} for item in items]
         return jsonify(result), 200
     except Exception as e:
+        logger.error(f"Erro ao exportar dados: {str(e)}")
         return jsonify({"erro": str(e)}), 500
 
 @app.route('/users', methods=['GET'])
