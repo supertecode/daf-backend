@@ -175,7 +175,7 @@ def get_audits(current_user):
 def exportar_dados():
     try:
         # Obtém todos os documentos da coleção
-        items = collection.find()
+        items = audits_collection.find()
         # Converte os documentos para um formato JSON serializável
         result = [json_util.loads(json_util.dumps(item)) for item in items]
         return jsonify(result), 200
